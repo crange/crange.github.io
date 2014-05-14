@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Cross-referencing source code</title>
+
+		<meta name="description" content="A framework for easily cross-referencing C/C++ source code">
+		<meta name="author" content="Anurag Patel">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<link rel="stylesheet" href="css/reveal.min.css">
+		<link rel="stylesheet" href="css/theme/simple.css" id="theme">
+
+		<!-- For syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- If the query includes 'print-pdf', include the PDF print sheet -->
+		<script>
+			if( window.location.search.match( /print-pdf/gi ) ) {
+				var link = document.createElement( 'link' );
+				link.rel = 'stylesheet';
+				link.type = 'text/css';
+				link.href = 'css/print/pdf.css';
+				document.getElementsByTagName( 'head' )[0].appendChild( link );
+			}
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				
+				<section>
+					<h1>crange</h1>
+					<h3>Cross-referencing source code with clang</h3>
+					<p>
+						<small><a href="mailto:apatel@redhat.com">Anurag Patel</a> &mdash; <a href="http://www.redhat.com">Red Hat</a> &mdash; <a href="https://github.com/crange/crange">github.com/crange/crange</a></small>
+					</p>
+				</section>
+
+				<section>
+					<h2>Table of contents</h2>
+					<ol>
+						<li>Tools considered</li>
+						<li>Clang and AST</li>
+						<li>Indexing with libclang</li>
+						<li>Crange</li>
+						<li>Challenges</li>
+						<li>Summary</li>
+					</ol>
+				</section>
+
+				<section>
+					<h2>Source code</h2>
+					<pre><code data-trim>
+#include &lt;stdio.h&gt;
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (n == 0)
+    return 0;
+  else if (n == 1)
+    return 1;
+  else
+    return (Fibonacci(n-1) + Fibonacci(n-2));
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  for ( c = 1 ; c <= n ; c++ ) {
+    printf("%d\n", Fibonacci(i)); i++;
+  }
+  return 0;
+}
+					</code></pre>
+					<p>Fibonacci series</p>
+				</section>
+
+				<section>
+					<h1>Tools considered</h1>
+				</section>
+
+				<section>
+					<h2>Ctags</h2>
+					<p>
+					+	Fast, comprehensive language support
+					</p>
+					<p>
+					-	Definitions only
+					</p>
+				</section>
+
+				<section>
+					<h2>Doxygen</h2>
+					<p>
+					+	X-Ref, XML output
+					</p>
+					<p>
+					-	Slow
+					</p>
+				</section>
+
+				<section>
+					<h2>GNU Global</h2>
+					<p>
+					+	Fast, definitions, X-Ref
+					</p>
+				</section>
+
+				<section>
+					<h2>Antlr</h2>
+					<p>
+					+	Seems powerful, LL(*) parser
+					</p>
+					<p>
+					-	Java, grammar files, complicated
+					</p>
+				</section>
+
+				<section>
+					<h2>Flex+Bison</h2>
+					<p>
+					+	<em>Is</em> powerful
+					</p>
+					<p>
+					-	CS 143 - Compilers
+					</p>
+				</section>
+
+				<section>
+					<h2>Clang</h2>
+					<p>
+					+	Declarations, definitions, X-Ref, range, statements, operators, expressions, literals
+					</p>
+				</section>
+
+				<section>
+					<h1>Clang</h1>
+				</section>
+
+				<section>
+					<h2>Clang</h2>
+					<p>
+						Compiler front end and static analyzer for C, C++, Objective-C. Converts programs to AST and allows AST manipulation.
+					</p>
+				</section>
+
+				<section>
+					<h2>AST</h2>
+					<pre><code data-trim>
+[snip]
+|-FunctionDecl 0x610a090 &lt;fibonacci.c:2:1, col:18&gt; Fibonacci 'int (int)'
+| `-ParmVarDecl 0x6109fd0 &lt;col:15&gt; 'int'
+|-FunctionDecl 0x610a1d0 prev 0x610a090 &lt;line:3:1, line:10:1&gt; Fibonacci 'int (int)'
+| |-ParmVarDecl 0x610a150 &lt;line:3:15, col:19&gt; n 'int'
+| `-CompoundStmt 0x6153a70 &lt;col:22, line:10:1&gt;
+|   `-IfStmt 0x6153a40 &lt;line:4:3, line:9:44&gt;
+|     |-&lt;&lt;&lt;NULL&gt;&gt;&gt;
+|     |-BinaryOperator 0x610a2d8 &lt;line:4:7, col:12&gt; 'int' '=='
+|     | |-ImplicitCastExpr 0x610a2c0 &lt;col:7&gt; 'int' &lt;LValueToRValue&gt;
+|     | | `-DeclRefExpr 0x610a278 &lt;col:7&gt; 'int' lvalue ParmVar 0x610a150 'n' 'int'
+|     | `-IntegerLiteral 0x610a2a0 &lt;col:12&gt; 'int' 0
+|     |-ReturnStmt 0x610a320 &lt;line:5:5, col:12&gt;
+|     | `-IntegerLiteral 0x610a300 &lt;col:12&gt; 'int' 0
+|     `-IfStmt 0x6153a10 &lt;line:6:8, line:9:44&gt;
+[snip]
+					</code></pre>
+					<p>
+						$ clang -cc1 -ast-dump fibonacci.c
+					</p>
+				</section>
+
+				<section>
+					<h1>libclang</h1>
+				</section>
+
+				<section>
+					<h2>libclang</h2>
+					<ul>
+						<li>Library for processing source code.</li>
+						<li>Translate source to AST</li>
+						<li>Resolve identifiers and symbols</li>
+						<li>Expand macros</li>
+						<li>Syntax highlighting</li>
+						<li>Code completion</li>
+					</ul>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (0/6)</h2>
+					<pre>
+#include &lt;stdio.h&gt;
+
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (n == 0)
+    return 0;
+  else if (n == 1)
+    return 1;
+  else
+    return (Fibonacci(n-1) + Fibonacci(n-2));
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  for ( c = 1 ; c <= n ; c++ ) {
+    printf("%d\n", Fibonacci(i)); i++;
+  }
+  return 0;
+}					</pre>
+					<p>
+						Walk the AST
+					</p>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (1/6)</h2>
+					<pre>
+<a href="#" class="hl">#include &lt;stdio.h&gt;</a>
+
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (n == 0)
+    return 0;
+  else if (n == 1)
+    return 1;
+  else
+    return (Fibonacci(n-1) + Fibonacci(n-2));
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  for ( c = 1 ; c <= n ; c++ ) {
+    printf("%d\n", Fibonacci(i)); i++;
+  }
+  return 0;
+}					</pre>
+					<p>
+						Macros
+					</p>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (2/6)</h2>
+					<pre>
+#include &lt;stdio.h&gt;
+
+int <a href="#" class="hl">Fibonacci</a>(int);
+int <a href="#" class="hl">Fibonacci</a>(int <a href="#" class="hl">n</a>) {
+  if (n == 0)
+    return 0;
+  else if (n == 1)
+    return 1;
+  else
+    return (Fibonacci(n-1) + Fibonacci(n-2));
+}
+
+int <a href="#" class="hl">main</a>() {
+  int <a href="#" class="hl">n</a> = 12, <a href="#" class="hl">i</a> = 0, <a href="#" class="hl">c</a>;
+  for ( c = 1 ; c <= n ; c++ ) {
+    printf("%d\n", Fibonacci(i)); i++;
+  }
+  return 0;
+}					</pre>
+					<p>
+						Declarations
+					</p>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (3/6)</h2>
+					<pre>
+#include &lt;stdio.h&gt;
+
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (<a href="#" class="hl">n</a> == 0)
+    return 0;
+  else if (<a href="#" class="hl">n</a> == 1)
+    return 1;
+  else
+    return (<a href="#" class="hl">Fibonacci</a>(<a href="#" class="hl">n</a>-1) + <a href="#" class="hl">Fibonacci</a>(<a href="#" class="hl">n</a>-2));
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  for ( <a href="#" class="hl">c</a> = 1 ; <a href="#" class="hl">c</a> <= <a href="#" class="hl">n</a> ; <a href="#" class="hl">c</a>++ ) {
+    printf("%d\n", <a href="#" class="hl">Fibonacci</a>(<a href="#" class="hl">i</a>)); <a href="#" class="hl">i</a>++;
+  }
+  return 0;
+}					</pre>
+					<p>
+						References
+					</p>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (4/6)</h2>
+					<pre>
+#include &lt;stdio.h&gt;
+
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (n == 0)
+    <a href="#" class="hl">return 0</a>;
+  else if (n == 1)
+    <a href="#" class="hl">return 1</a>;
+  else
+    <a href="#" class="hl">return (Fibonacci(n-1) + Fibonacci(n-2))</a>;
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  <a href="#" class="hl">for ( c = 1 ; c <= n ; c++ ) {
+    printf("%d\n", Fibonacci(i)); i++;
+  }</a>
+  <a href="#" class="hl">return 0</a>;
+}					</pre>
+					<p>
+						Statements
+					</p>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (5/6)</h2>
+					<pre>
+#include &lt;stdio.h&gt;
+
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (n == 0)
+    return 0;
+  else if (n == 1)
+    return 1;
+  else
+    return (<a href="#" class="hl">Fibonacci(n-1)</a> + <a href="#" class="hl">Fibonacci(n-2)</a>);
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  for ( c = 1 ; c <= n ; c++ ) {
+    <a href="#" class="hl">printf</a>("%d\n", <a href="#" class="hl">Fibonacci(i)</a>); i++;
+  }
+  return 0;
+}					</pre>
+					<p>
+						Expressions
+					</p>
+				</section>
+
+				<section>
+					<h2>Indexing and X-ref (6/6)</h2>
+					<pre>
+#include &lt;stdio.h&gt;
+
+int Fibonacci(int);
+int Fibonacci(int n) {
+  if (n <a href="#" class="hl">==</a> 0)
+    return 0;
+  else if (n <a href="#" class="hl">==</a> 1)
+    return 1;
+  else
+    return (Fibonacci(n<a href="#" class="hl">-</a>1) <a href="#" class="hl">+</a> Fibonacci(n<a href="#" class="hl">-</a>2));
+}
+
+int main() {
+  int n = 12, i = 0, c;
+  for ( c <a href="#" class="hl">=</a> 1 ; c <a href="#" class="hl"><=</a> n ; c<a href="#" class="hl">++</a> ) {
+    printf("%d\n", Fibonacci(i)); i<a href="#" class="hl">++</a>;
+  }
+  return 0;
+}					</pre>
+					<p>
+						Operators
+					</p>
+				</section>
+
+				<section>
+					<h1>Crange</h1>
+				</section>
+
+				<section>
+					<h2>Frontend</h2>
+					<ul>
+						<li><del>C++</del></li>
+						<li><del>libclang + Python</del></li>
+						<li>libclang + Python + multiprocessing</li>
+						<li>crtags: generating tag db</li>
+						<li>crange: query</li>
+					</ul>
+				</section>
+
+				<section>
+					<h2>Datastore</h2>
+					<ul>
+						<li><del>JSON</del></li>
+						<li><del>HDF5</del></li>
+						<li><del>BerkeleyDB</del></li>
+						<li>SQLite</li>
+					<ul>
+				</section>
+
+				<section>
+					<h2>Multiprocessing model</h2>
+					<ul>
+						<li>1 DB worker</li>
+						<li>1 multiprocessing.Queue</li>
+						<li>n-1 AST workers*</li>
+					<ul>
+				</section>
+
+				<section>
+					<h2>multiprocessing.Pool()</h2>
+					<img width="574" height="379" src="images/multiprocessing-model.png" alt="Multiprocessing model">
+					<p>1 async DB worker, n-1 sync AST workers</p>
+				</section>
+
+				<section>
+					<h2>crtags</h2>
+					<pre>
+$ cd linux-3.13.5
+$ time crtags -v -j 32 .
+Parsing fs/xfs/xfs_bmap_btree.c (count: 1)
+Indexing fs/xfs/xfs_bmap_btree.c (nodes: 379, qsize: 0)
+...
+Parsing sound/soc/codecs/ak4641.h (count: 34348)
+Generating indexes
+
+real    415m10.974s
+user    8108m52.241s
+sys     72m51.554s
+$
+					</pre>
+					<p>Generates 22GB tags file in ~7 hours</p>
+					<p>16GB RAM & 32 CPUs</p>
+				</section>
+
+				<section>
+					<h2>curl demo</h2>
+					<p>$ time crtags -v -j 32 curl-7.35.0/</p>
+				</section>
+
+				<section>
+					<h1>Challenges</h1>
+				</section>
+
+				<section>
+					<h2>Include paths</h2>
+					<p>$ clang -I/usr/include -Iinclude -I`llvm-config --cflags`
+				</section>
+				
+				<section>
+					<h2>Macros</h2>
+					<code>-D_DEBUG -D_GNU_SOURCE -D_CONSTANT_MACROS</code>
+				</section>
+
+				<section>
+					<h2>Makefile/CMake</h2>
+					<pre><code data-trim>
+[
+  { "directory": "/home/anurag/llvm/build",
+    "command": "/usr/bin/clang++ -Irelative -DSOMEDEF=\"With spaces, quotes and \\-es.\" -c -o MachineVerifier.o MachineVerifier.cpp",
+    "file": "MachineVerifier.cpp" },
+  ...
+]
+					</code></pre>
+				</section>
+
+				<section>
+					<h2>Python vs C++</h2>
+				</section>
+
+				<section>
+					<h1>Summary</h1>
+				</section>
+
+				<section>
+					<h2>Crange can provide</h2> 
+					<ul>
+						<li>Definitions</li> 
+						<li>Declarations</li> 
+						<li>References</li> 
+						<li>Expressions</li>
+						<li>Operators</li> 
+						<li>Symbols</li> 
+						<li>Source range</li> 
+						<li>Fancy search</li> 
+						<li>Code folding*</li> 
+						<li>Find similar code*</li> 
+					</ul>
+				</section>
+
+				<section>
+					<h2>Further reading</h2>
+					<ul>
+						<li><a href="https://github.com/crange/crange">https://github.com/crange/crange</a></li>
+						<li><a href="http://clang.llvm.org/get_started.html">http://clang.llvm.org/get_started.html</a></li>
+						<li><a href="https://github.com/trolldbois/python-clang/tree/master/tests/cindex">github.com/trolldbois/python-clang/tree/master/tests/cindex</a></li>
+						<li><a href="https://docs.python.org/2/library/multiprocessing.html">https://docs.python.org/2/library/multiprocessing.html</a></li>
+						<li><a href="http://clang.llvm.org/doxygen/group__CINDEX.html">http://clang.llvm.org/doxygen/group__CINDEX.html</a></li>
+					</ul>
+				</section>
+
+				<section>
+					<h1>END</h1>
+				</section>				
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.min.js"></script>
+
+		<script>
+
+			// Full list of configuration options available here:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: false,
+				progress: true,
+				history: true,
+				center: true,
+				slideNumber: true,
+
+				theme: Reveal.getQueryHash().theme || 'beige', // available themes are in /css/theme
+				transition: Reveal.getQueryHash().transition || 'fade', // default/cube/page/concave/zoom/linear/fade/none
+
+				// Parallax scrolling
+				// parallaxBackgroundImage: 'https://s3.amazonaws.com/hakim-static/reveal-js/reveal-parallax-1.jpg',
+				// parallaxBackgroundSize: '2100px 900px',
+
+				// Optional libraries used to extend on reveal.js
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+					{ src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
